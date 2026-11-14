@@ -137,7 +137,18 @@ class Launcher(ctk.CTk):
         self.run_script("hush.py", ["devices"], "Listing devices…")
 
     def run_live(self):
-        self.run_script("hush.py", ["run", "--in", "2", "--out", "4"], "Running live demo…")
+        in_dialog = ctk.CTkInputDialog(
+            text="Input device number (see 'List devices'):", title="Run live demo")
+        inp = in_dialog.get_input()
+        if not inp or not inp.strip():
+            return
+        out_dialog = ctk.CTkInputDialog(
+            text="Output device number (needs 2 channels, e.g. headphones):", title="Run live demo")
+        out = out_dialog.get_input()
+        if not out or not out.strip():
+            return
+        self.run_script("hush.py", ["run", "--in", inp.strip(), "--out", out.strip()],
+                         "Running live demo…")
 
     def run_record(self):
         self.run_script("record.py", [], "Recording…")
@@ -156,13 +167,8 @@ class Launcher(ctk.CTk):
         name = dialog.get_input()
         if not name or not name.strip():
             return
-        alias_dialog = ctk.CTkInputDialog(
-            text="Word to say in commands (e.g. michael):", title="Enroll a voice")
-        alias = alias_dialog.get_input()
-        args = ["enroll", name.strip()]
-        if alias and alias.strip():
-            args += ["--alias", alias.strip()]
-        self.run_script("hush.py", args, f"Enrolling {name.strip()}…")
+        name = name.strip()
+        self.run_script("hush.py", ["enroll", name], f"Enrolling {name}…")
 
 
 if __name__ == "__main__":

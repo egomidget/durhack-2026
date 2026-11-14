@@ -351,19 +351,16 @@ def run_gui(h):
         name = simpledialog.askstring("Enroll voice", "Name to display:", parent=root)
         if not name or not name.strip():
             return
-        alias = simpledialog.askstring(
-            "Enroll voice", "Word to say in commands\n(a common English word/name works best):",
-            initialvalue=name.strip().lower(), parent=root)
-        if not alias or not alias.strip():
-            return
+        name = name.strip()
+        alias = name.lower()
         secs = h.args.enroll_seconds
         ui["enroll_until"] = time.time() + secs
 
         def done(err):
-            h.last_cmd = f"Enroll failed: {err}" if err else f"Enrolled {name.strip()}"
+            h.last_cmd = f"Enroll failed: {err}" if err else f"Enrolled {name}"
             ui["rebuild"] = True
 
-        h.enroll_live(name.strip(), alias.strip().lower(), secs, done)
+        h.enroll_live(name, alias, secs, done)
 
     ctl = tk.Frame(root, bg=BG)
     ctl.pack(side="bottom", fill="x", padx=28, pady=14)
