@@ -1,0 +1,11 @@
+# Colab GPU: remove.py, score.py, notebooks/finetune.ipynb
+# Plus: the wesep-real-tse repo (git clone) and its pinned WeSpeaker commit (see its README).
+torch==2.7.1
+torchaudio==2.7.1
+numpy
+scipy
+soundfile
+resemblyzer
+matplotlib
+tqdm
+pyyaml

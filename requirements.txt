@@ -1,0 +1,11 @@
+# Laptop: hush.py, record.py, make_testset.py, plots.py, launcher.py
+setuptools<81  # webrtcvad (via resemblyzer) needs pkg_resources, removed in setuptools 81+
+numpy
+scipy
+soundfile
+sounddevice
+resemblyzer
+vosk
+matplotlib
+tqdm
+customtkinter

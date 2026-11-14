@@ -1,0 +1,15 @@
+# data and models live in the shared Drive folder, never in git
+HUSH-data/
+voices/
+vosk-model*/
+*.wav
+*.pt
+*.npy
+*.zip
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.DS_Store
