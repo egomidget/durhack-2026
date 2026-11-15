@@ -114,3 +114,24 @@ if __name__ == "__main__":
     print("\n================================")
     print("Both recordings processed successfully!")
     print("================================")
+
+    print("\n========== TEST RECORDING ==========")
+
+    test_audio = preprocess_audio(
+        "Prema/audiofiles/test.wav",
+        "Prema/audiofiles/processed/test_processed.wav"
+    )
+
+    print("\n========== MERCEDES TEST ==========")
+
+    preprocess_audio(
+        "Prema/audiofiles/Merc yap.wav",
+        "Prema/audiofiles/processed/merc_yap_processed.wav"
+    )
+
+    print("\n========== PREMA TEST ==========")
+
+    preprocess_audio(
+        "Prema/audiofiles/Prema yap.wav",
+        "Prema/audiofiles/processed/prema_yap_processed.wav"
+    )
