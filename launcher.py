@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-HUSH Control Panel - one window to run every script in this repo.
+HUSH Control Panel.
 
   python launcher.py
 
-Buttons on the left run the pipeline scripts as subprocesses (same as typing
-the command yourself); their stdout/stderr streams into the panel on the
-right. Stub scripts (record.py, make_testset.py, remove.py, score.py,
-plots.py) will just print NotImplementedError until they're implemented -
-that's expected, not a launcher bug.
+"Go Live" runs hush.py's live mute-by-voice demo (ducks the whole channel
+when Mikolaj is detected). "Record & Remove Mikolaj" records a short message
+and plays back a version with just his voice removed, via message.py (SepFormer
+separation + ECAPA identification). Both run as subprocesses; their output
+streams into the panel on the right.
 """
 import queue
 import subprocess
@@ -28,8 +28,8 @@ class Launcher(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         self.title("HUSH Control Panel")
-        self.geometry("980x620")
-        self.minsize(820, 520)
+        self.geometry("900x560")
+        self.minsize(760, 460)
 
         self.proc = None
         self.out_q = queue.Queue()
@@ -39,32 +39,28 @@ class Launcher(ctk.CTk):
 
         sidebar = ctk.CTkFrame(self, width=230, corner_radius=0)
         sidebar.grid(row=0, column=0, sticky="nswe")
-        sidebar.grid_rowconfigure(10, weight=1)
+        sidebar.grid_rowconfigure(5, weight=1)
 
         ctk.CTkLabel(sidebar, text="HUSH", font=ctk.CTkFont(size=28, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(20, 0), sticky="w")
         ctk.CTkLabel(sidebar, text="mute one voice", text_color="gray60").grid(
             row=1, column=0, padx=20, pady=(0, 16), sticky="w")
 
-        actions = [
-            ("List devices", self.run_devices),
-            ("Enroll a voice", self.open_enroll),
-            ("Run live demo", self.run_live),
-            ("Record audio", self.run_record),
-            ("Make test set", self.run_make_testset),
-            ("Score a model", self.run_score),
-            ("Make plots", self.run_plots),
-        ]
-        for i, (label, cb) in enumerate(actions, start=2):
-            ctk.CTkButton(sidebar, text=label, command=cb, anchor="w").grid(
-                row=i, column=0, padx=16, pady=6, sticky="we")
+        ctk.CTkButton(sidebar, text="Go Live", height=48, font=ctk.CTkFont(size=16, weight="bold"),
+                      command=self.run_live).grid(row=2, column=0, padx=16, pady=6, sticky="we")
+        ctk.CTkButton(sidebar, text="Record & Remove Mikolaj", height=48,
+                      font=ctk.CTkFont(size=14), command=self.run_message).grid(
+            row=3, column=0, padx=16, pady=6, sticky="we")
+        ctk.CTkButton(sidebar, text="Score & Compare", height=40,
+                      font=ctk.CTkFont(size=13), fg_color="gray30", hover_color="gray25",
+                      command=self.run_compare).grid(row=4, column=0, padx=16, pady=6, sticky="we")
 
-        self.stop_btn = ctk.CTkButton(sidebar, text="Stop running script", fg_color="#b03030",
+        self.stop_btn = ctk.CTkButton(sidebar, text="Stop", fg_color="#b03030",
                                        hover_color="#8a2424", command=self.stop_running, state="disabled")
-        self.stop_btn.grid(row=11, column=0, padx=16, pady=(6, 20), sticky="swe")
+        self.stop_btn.grid(row=6, column=0, padx=16, pady=(6, 20), sticky="swe")
 
         main = ctk.CTkFrame(self, corner_radius=0)
-        main.grid(row=0, column=1, sticky="nswe", padx=(0, 0))
+        main.grid(row=0, column=1, sticky="nswe")
         main.grid_rowconfigure(1, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
@@ -103,7 +99,10 @@ class Launcher(ctk.CTk):
             self._append("\n[a script is already running - stop it first]\n")
             return
         args = args or []
-        cmd = [PY, str(HERE / script), *args]
+        # -u: Python block-buffers stdout when it's piped (not a TTY), so without this
+        # output can sit invisible for minutes on a long script - looks frozen even
+        # though it's working, and someone hits Stop thinking it's hung.
+        cmd = [PY, "-u", str(HERE / script), *args]
         self.output.configure(state="normal")
         self.output.delete("1.0", "end")
         self.output.configure(state="disabled")
@@ -132,37 +131,15 @@ class Launcher(ctk.CTk):
             self.proc.terminate()
             self._append("\n[stopped]\n")
 
-    # ------------------------------------------------------------- shortcuts
-    def run_devices(self):
-        self.run_script("hush.py", ["devices"], "Listing devices…")
-
+    # ------------------------------------------------------------- actions
     def run_live(self):
-        self.run_script("hush.py", ["run", "--in", "2", "--out", "4"], "Running live demo…")
+        self.run_script("hush.py", ["run"], "Going live…")
 
-    def run_record(self):
-        self.run_script("record.py", [], "Recording…")
+    def run_message(self):
+        self.run_script("message.py", ["--seconds", "12"], "Recording message…")
 
-    def run_make_testset(self):
-        self.run_script("make_testset.py", ["--selftest"], "Building test set (selftest)…")
-
-    def run_score(self):
-        self.run_script("score.py", ["--selftest"], "Scoring (selftest)…")
-
-    def run_plots(self):
-        self.run_script("plots.py", [], "Making plots…")
-
-    def open_enroll(self):
-        dialog = ctk.CTkInputDialog(text="Name to enroll (e.g. Mikolaj):", title="Enroll a voice")
-        name = dialog.get_input()
-        if not name or not name.strip():
-            return
-        alias_dialog = ctk.CTkInputDialog(
-            text="Word to say in commands (e.g. michael):", title="Enroll a voice")
-        alias = alias_dialog.get_input()
-        args = ["enroll", name.strip()]
-        if alias and alias.strip():
-            args += ["--alias", alias.strip()]
-        self.run_script("hush.py", args, f"Enrolling {name.strip()}…")
+    def run_compare(self):
+        self.run_script("compare.py", [], "Scoring both pipelines on the test set…")
 
 
 if __name__ == "__main__":

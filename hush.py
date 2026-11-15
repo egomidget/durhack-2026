@@ -138,6 +138,25 @@ class Hush:
         self.hist = np.zeros(int(self.sr * max(2.0, args.window + 0.5)), np.float32)
         self.delay_buf = np.zeros(int(self.sr * args.delay), np.float32)
         self.asr_q = queue.Queue(maxsize=500)
+        self._pink_state = np.zeros(7, np.float32)  # Paul Kellet pink noise filter
+
+    # ---- soft masking noise instead of dead silence (docs/PLAN.md: "masks with
+    # shaped noise") - cheap pink noise via a one-pole-per-octave filter bank ----
+    def _pink_noise(self, n):
+        white = np.random.uniform(-1.0, 1.0, n).astype(np.float32)
+        b = self._pink_state
+        out = np.empty(n, np.float32)
+        for i in range(n):
+            w = white[i]
+            b[0] = 0.99886 * b[0] + w * 0.0555179
+            b[1] = 0.99332 * b[1] + w * 0.0750759
+            b[2] = 0.96900 * b[2] + w * 0.1538520
+            b[3] = 0.86650 * b[3] + w * 0.3104856
+            b[4] = 0.55000 * b[4] + w * 0.5329522
+            b[5] = -0.7616 * b[5] - w * 0.0168980
+            out[i] = b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + w * 0.5362
+            b[6] = w * 0.115926
+        return out * 0.11  # roughly normalise to [-1, 1]-ish
 
     # ---- realtime audio callback (keep it cheap) ----
     def callback(self, indata, outdata, frames, time_info, status):
@@ -168,7 +187,12 @@ class Hush:
             g1 = min(tgt, g0 + n / (self.args.release * self.sr))
         self.gain = g1
         ramp = np.linspace(g0, g1, n, dtype=np.float32)
-        outdata[:] = (out * ramp * self.args.volume)[:, None]
+        mixed = out * ramp
+        if self.args.mask_level > 0:
+            # crossfade the ducked voice into soft noise instead of dead silence -
+            # (1 - ramp) is how "muted" we currently are, 0 when fully audible
+            mixed = mixed + self._pink_noise(n) * (1.0 - ramp) * self.args.mask_level
+        outdata[:] = (mixed * self.args.volume)[:, None]
 
     # ---- who is talking? ----
     def analyze_loop(self):
@@ -351,19 +375,16 @@ def run_gui(h):
         name = simpledialog.askstring("Enroll voice", "Name to display:", parent=root)
         if not name or not name.strip():
             return
-        alias = simpledialog.askstring(
-            "Enroll voice", "Word to say in commands\n(a common English word/name works best):",
-            initialvalue=name.strip().lower(), parent=root)
-        if not alias or not alias.strip():
-            return
+        name = name.strip()
+        alias = name.lower()
         secs = h.args.enroll_seconds
         ui["enroll_until"] = time.time() + secs
 
         def done(err):
-            h.last_cmd = f"Enroll failed: {err}" if err else f"Enrolled {name.strip()}"
+            h.last_cmd = f"Enroll failed: {err}" if err else f"Enrolled {name}"
             ui["rebuild"] = True
 
-        h.enroll_live(name.strip(), alias.strip().lower(), secs, done)
+        h.enroll_live(name, alias, secs, done)
 
     ctl = tk.Frame(root, bg=BG)
     ctl.pack(side="bottom", fill="x", padx=28, pady=14)
@@ -372,6 +393,11 @@ def run_gui(h):
                    highlightthickness=0, command=lambda v: setattr(h, "threshold", float(v)))
     thr.set(h.threshold)
     thr.pack(side="left")
+    mask = tk.Scale(ctl, from_=0.0, to=0.6, resolution=0.01, orient="horizontal",
+                    label="interference level", length=200, bg=BG, fg=FG, troughcolor=PANEL,
+                    highlightthickness=0, command=lambda v: setattr(h.args, "mask_level", float(v)))
+    mask.set(h.args.mask_level)
+    mask.pack(side="left", padx=(12, 0))
     tk.Button(ctl, text="Mute all", command=lambda: h.set_muted("*", True)).pack(side="left", padx=8)
     tk.Button(ctl, text="Unmute all", command=lambda: h.set_muted("*", False)).pack(side="left")
     tk.Button(ctl, text="+ Enroll voice", command=enroll).pack(side="right")
@@ -499,16 +525,20 @@ def main():
     p.add_argument("--rate", type=int, default=48000)
     p.add_argument("--out-channels", type=int, default=2)
     p.add_argument("--block-ms", type=float, default=10)
-    p.add_argument("--delay", type=float, default=0.3,
-                   help="seconds of delay before headphones (gives detector a head start)")
+    p.add_argument("--delay", type=float, default=0.45,
+                   help="seconds of delay before headphones (gives detector a head start - "
+                        "a bit more than before trades a small lag for fewer false triggers)")
     p.add_argument("--window", type=float, default=1.0, help="analysis window (s)")
     p.add_argument("--hop", type=float, default=0.15, help="how often to analyse (s)")
-    p.add_argument("--hold", type=float, default=0.6, help="stay muted this long after last detection")
+    p.add_argument("--hold", type=float, default=0.8, help="stay muted this long after last detection")
     p.add_argument("--threshold", type=float, default=0.75, help="voice match threshold")
     p.add_argument("--gate", type=float, default=-45, help="mic level (dBFS) counted as speech")
     p.add_argument("--floor", type=float, default=0.0, help="gain when muted (0 = silent)")
-    p.add_argument("--attack", type=float, default=0.02)
-    p.add_argument("--release", type=float, default=0.25)
+    p.add_argument("--mask-level", type=float, default=0.3, dest="mask_level",
+                   help="soft pink-noise 'interference' level to crossfade in while muted, "
+                        "instead of dead silence (0 = silent like before, try 0.2-0.4)")
+    p.add_argument("--attack", type=float, default=0.04)
+    p.add_argument("--release", type=float, default=0.3)
     p.add_argument("--volume", type=float, default=1.0, help="headphone gain")
     p.add_argument("--wake", default="hush", help="wake word for voice commands")
     p.add_argument("--vosk-model", default=str(HERE / "vosk-model-small-en-us-0.15"))
