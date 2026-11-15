@@ -3,7 +3,7 @@ HUSH-data/
 voices/
 vosk-model*/
 *.wav
-*.pt
+# *.pt
 *.npy
 *.zip
 
