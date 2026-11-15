@@ -3,7 +3,7 @@
 Record a short message from the mic, remove Mikolaj's voice from it (via
 Prema/remove_mikolaj_16k.py - SepFormer + ECAPA), and play back the result.
 
-  python message.py [--seconds 12] [--in DEVICE]
+  python message.py [--seconds 12] [--in DEVICE] [--out DEVICE]
 """
 import argparse
 import subprocess
@@ -21,7 +21,19 @@ HERE = Path(__file__).resolve().parent
 MESSAGES_DIR = HERE / "HUSH-data" / "messages"
 
 
+def dev(x):
+    """sounddevice treats string device IDs as name substrings, not indices -
+    convert numeric strings to int so '0' means device 0, not 'name contains 0'."""
+    if x is None:
+        return None
+    try:
+        return int(x)
+    except ValueError:
+        return x
+
+
 def record(seconds, device=None):
+    device = dev(device)
     info = sd.query_devices(device, "input")
     native_sr = int(info["default_samplerate"])
     print(f"Recording {seconds:.0f}s - talk naturally. Starting now!")
@@ -46,6 +58,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seconds", type=float, default=12)
     p.add_argument("--in", dest="inp", default=None, help="input device number or name")
+    p.add_argument("--out", dest="outp", default=None, help="output device number or name")
     a = p.parse_args()
 
     wav = record(a.seconds, device=a.inp)
@@ -65,7 +78,7 @@ def main():
 
     print(f"\nPlaying back: {expected.name}")
     out_wav = common.load_wav(expected)
-    sd.play(out_wav, common.SR)
+    sd.play(out_wav, common.SR, device=dev(a.outp))
     sd.wait()
     print("Done.")
 
