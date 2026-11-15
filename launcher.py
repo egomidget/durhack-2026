@@ -17,6 +17,7 @@ import threading
 from pathlib import Path
 
 import customtkinter as ctk
+from tkinter import filedialog
 
 HERE = Path(__file__).resolve().parent
 PY = sys.executable
@@ -50,6 +51,7 @@ class Launcher(ctk.CTk):
             ("List devices", self.run_devices),
             ("Enroll a voice", self.open_enroll),
             ("Run live demo", self.run_live),
+            ("Remove a voice", self.open_remove),
             ("Record audio", self.run_record),
             ("Make test set", self.run_make_testset),
             ("Score a model", self.run_score),
@@ -161,6 +163,30 @@ class Launcher(ctk.CTk):
 
     def run_plots(self):
         self.run_script("plots.py", [], "Making plots…")
+
+    def open_remove(self):
+        mix = filedialog.askopenfilename(
+            title="Pick the mix (overlapping speech) WAV", filetypes=[("WAV", "*.wav")])
+        if not mix:
+            return
+        enroll = filedialog.askopenfilename(
+            title="Pick an enrollment WAV of the voice to remove", filetypes=[("WAV", "*.wav")])
+        if not enroll:
+            return
+        alpha_dialog = ctk.CTkInputDialog(
+            text="Removal strength --alpha (1.0 = default, try 1.1-1.3 for stronger):",
+            title="Remove a voice")
+        alpha = alpha_dialog.get_input()
+        alpha = (alpha or "1.0").strip() or "1.0"
+        out_name = Path(mix).stem.replace(" ", "_") + "_removed.wav"
+        target_name = Path(mix).stem.replace(" ", "_") + "_target.wav"
+        self.run_script("remove.py", [
+            "--mix", mix, "--enroll", enroll,
+            "--ckpt", "checkpoints/pretrained/spk_emb_100",
+            "--alpha", alpha,
+            "--out", f"results/{out_name}",
+            "--save-target", f"results/{target_name}",
+        ], "Removing voice…")
 
     def open_enroll(self):
         dialog = ctk.CTkInputDialog(text="Name to enroll (e.g. Mikolaj):", title="Enroll a voice")
