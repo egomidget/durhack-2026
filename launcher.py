@@ -17,6 +17,7 @@ import threading
 from pathlib import Path
 
 import customtkinter as ctk
+from tkinter import filedialog
 
 HERE = Path(__file__).resolve().parent
 PY = sys.executable
@@ -39,7 +40,7 @@ class Launcher(ctk.CTk):
 
         sidebar = ctk.CTkFrame(self, width=230, corner_radius=0)
         sidebar.grid(row=0, column=0, sticky="nswe")
-        sidebar.grid_rowconfigure(5, weight=1)
+        sidebar.grid_rowconfigure(6, weight=1)
 
         ctk.CTkLabel(sidebar, text="HUSH", font=ctk.CTkFont(size=28, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(20, 0), sticky="w")
@@ -54,10 +55,13 @@ class Launcher(ctk.CTk):
         ctk.CTkButton(sidebar, text="Score & Compare", height=40,
                       font=ctk.CTkFont(size=13), fg_color="gray30", hover_color="gray25",
                       command=self.run_compare).grid(row=4, column=0, padx=16, pady=6, sticky="we")
+        ctk.CTkButton(sidebar, text="Spray Paint Mikolaj", height=44,
+                      font=ctk.CTkFont(size=14), fg_color="#7a2ff0", hover_color="#6020c8",
+                      command=self.run_spray_paint).grid(row=5, column=0, padx=16, pady=6, sticky="we")
 
         self.stop_btn = ctk.CTkButton(sidebar, text="Stop", fg_color="#b03030",
                                        hover_color="#8a2424", command=self.stop_running, state="disabled")
-        self.stop_btn.grid(row=6, column=0, padx=16, pady=(6, 20), sticky="swe")
+        self.stop_btn.grid(row=7, column=0, padx=16, pady=(6, 20), sticky="swe")
 
         main = ctk.CTkFrame(self, corner_radius=0)
         main.grid(row=0, column=1, sticky="nswe")
@@ -94,7 +98,7 @@ class Launcher(ctk.CTk):
             pass
         self.after(80, self._drain_queue)
 
-    def run_script(self, script, args=None, label=None):
+    def run_script(self, script, args=None, label=None, python=None, cwd=None):
         if self.proc is not None:
             self._append("\n[a script is already running - stop it first]\n")
             return
@@ -102,7 +106,7 @@ class Launcher(ctk.CTk):
         # -u: Python block-buffers stdout when it's piped (not a TTY), so without this
         # output can sit invisible for minutes on a long script - looks frozen even
         # though it's working, and someone hits Stop thinking it's hung.
-        cmd = [PY, "-u", str(HERE / script), *args]
+        cmd = [python or PY, "-u", str(script), *args]
         self.output.configure(state="normal")
         self.output.delete("1.0", "end")
         self.output.configure(state="disabled")
@@ -114,7 +118,7 @@ class Launcher(ctk.CTk):
             try:
                 self.proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, cwd=str(HERE))
+                    text=True, bufsize=1, cwd=str(cwd or HERE))
                 for line in self.proc.stdout:
                     self.out_q.put(line)
                 self.proc.wait()
@@ -133,13 +137,27 @@ class Launcher(ctk.CTk):
 
     # ------------------------------------------------------------- actions
     def run_live(self):
-        self.run_script("hush.py", ["run"], "Going live…")
+        self.run_script(HERE / "hush.py", ["run"], "Going live…")
 
     def run_message(self):
-        self.run_script("message.py", ["--seconds", "12"], "Recording message…")
+        self.run_script(HERE / "message.py", ["--seconds", "12"], "Recording message…")
 
     def run_compare(self):
-        self.run_script("compare.py", [], "Scoring both pipelines on the test set…")
+        self.run_script(HERE / "compare.py", [], "Scoring both pipelines on the test set…")
+
+    def run_spray_paint(self):
+        path = filedialog.askopenfilename(
+            title="Pick a background image to spray-paint over",
+            filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp")])
+        if not path:
+            return
+        spray_dir = HERE / "spray_paint"
+        spray_py = spray_dir / ".venv" / "bin" / "python"
+        if not spray_py.exists():
+            self._append(f"\n[spray_paint venv not found at {spray_py} - run spray_paint/setup.sh first]\n")
+            return
+        self.run_script(spray_dir / "spray_canvas.py", ["--background", path],
+                        "Spray-painting…", python=str(spray_py), cwd=str(spray_dir))
 
 
 if __name__ == "__main__":
