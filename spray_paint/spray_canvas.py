@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 import threading
 import time
 import urllib.request
@@ -41,13 +42,17 @@ def ensure_model():
         temp.unlink(missing_ok=True)
 
 
+_CAMERA_BACKEND = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
+
+
 class ThreadedCamera:
-    """Latest-frame DirectShow capture; old frames are discarded to limit lag."""
+    """Latest-frame capture (DirectShow on Windows, AVFoundation on Mac); old frames are discarded to limit lag."""
     def __init__(self, index: int, width: int, height: int):
-        self.cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(index, _CAMERA_BACKEND)
         if not self.cap.isOpened():
             self.cap.release()
-            raise RuntimeError(f"Could not open camera {index}. Try --camera 1 or check Windows camera permissions.")
+            raise RuntimeError(f"Could not open camera {index}. Try --camera 1 or check camera permissions "
+                              "(System Settings > Privacy & Security > Camera on Mac).")
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, 60)
@@ -125,6 +130,19 @@ class Audio:
         for ch, v in zip(self.channels, vals): ch.set_volume(0 if self.muted else v)
 
 
+def load_background(path, w, h):
+    """Load an image and cover-fit it to (w, h): resize to fill, then center-crop."""
+    img = cv2.imread(str(path))
+    if img is None:
+        raise RuntimeError(f"Could not read background image: {path}")
+    ih, iw = img.shape[:2]
+    scale = max(w / iw, h / ih)
+    resized = cv2.resize(img, (int(iw * scale + 0.5), int(ih * scale + 0.5)), interpolation=cv2.INTER_AREA)
+    rh, rw = resized.shape[:2]
+    x0, y0 = (rw - w) // 2, (rh - h) // 2
+    return resized[y0:y0 + h, x0:x0 + w]
+
+
 def run(args):
     ensure_model()
     opts = vision.HandLandmarkerOptions(base_options=python.BaseOptions(model_asset_path=str(MODEL_PATH)),
@@ -134,7 +152,8 @@ def run(args):
     cam = ThreadedCamera(args.camera, args.camera_width, args.camera_height)
     pygame.init()
     audio = Audio()
-    paint = np.full((H, W, 3), BG, np.uint8)
+    background = load_background(args.background, W, H) if args.background else np.full((H, W, 3), BG, np.uint8)
+    paint = background.copy()
     saturation = np.zeros((H//8, W//8), np.float32)
     drips, ema, spray_state = [], {}, {}
     palette, started = 0, time.perf_counter()
@@ -206,7 +225,7 @@ def run(args):
             key = cv2.waitKey(1)&0xff
             if key in (ord('q'),27): break
             if key == ord('c'):
-                paint[:] = BG; saturation[:] = 0; drips.clear()
+                paint[:] = background; saturation[:] = 0; drips.clear()
             elif key == ord('m'): audio.muted = not audio.muted
             elif ord('1') <= key <= ord('5'): palette = key-ord('1')
     finally:
@@ -218,6 +237,7 @@ def main():
     parser.add_argument("--camera", type=int, default=0, help="DirectShow camera index (default: 0)")
     parser.add_argument("--camera-width", type=int, default=1280)
     parser.add_argument("--camera-height", type=int, default=720)
+    parser.add_argument("--background", help="image to spray-paint over instead of a blank canvas")
     args = parser.parse_args()
     try: run(args)
     except KeyboardInterrupt: pass
