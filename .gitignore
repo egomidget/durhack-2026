@@ -13,3 +13,6 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 .DS_Store
+.venv-separation/
+Prema/models/
+Prema/models/
